@@ -1,73 +1,222 @@
-# Welcome to your Lovable project
 
-## Project info
+```md
+# 🧠 Infrastructure Weaver  
+### Systemic Failure & Dependency Analysis in Public Infrastructure
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+Infrastructure Weaver is a full-stack system that models **urban public infrastructure as a dependency network** and helps analyze **root causes of failures** and **cascading impacts** using graph traversal techniques.
 
-## How can I edit this code?
+The project demonstrates how interconnected systems such as **power, water, telecom, and transport** influence one another, and how ignoring dependencies leads to repeated failures.
 
-There are several ways of editing your application.
+---
 
-**Use Lovable**
+## 🚀 Key Features
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- 📊 **Graph-based infrastructure modeling**
+- 🔍 **Root cause analysis of failures**
+- 🔁 **Cascading impact detection**
+- ⚠️ **Critical infrastructure identification**
+- 🖱️ **Interactive network visualization**
+- 🏙️ **Real-world dataset (Chennai city infrastructure)**
 
-Changes made via Lovable will be committed automatically to this repo.
+---
 
-**Use your preferred IDE**
+## 🧩 Problem Statement
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+In modern cities, infrastructure systems are tightly interconnected:
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+- Power
+- Water
+- Telecom
+- Transport
 
-Follow these steps:
+However, failures are often handled in isolation.  
+This results in:
+- Repeated breakdowns
+- Inefficient repairs
+- Ignored root causes
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+**Infrastructure Weaver solves this by modeling dependencies explicitly using graphs**, allowing planners and engineers to understand how failures propagate across systems.
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+---
 
-# Step 3: Install the necessary dependencies.
-npm i
+## 🧠 Core Idea
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+> _“Analyze public infrastructure as a dependency network to identify root causes of failures and detect cascading impacts using graph traversal.”_
+
+---
+
+## 🏗️ System Architecture
+
+### 🔹 Frontend
+- React + TypeScript
+- Vite
+- Tailwind CSS
+- Framer Motion
+- React Force Graph
+
+### 🔹 Backend
+- Node.js
+- Express.js
+- Neo4j Driver
+
+### 🔹 Database
+- Neo4j (Graph Database)
+
+---
+
+## 🗂️ Project Structure
+
+```
+
+infrastructure-weaver/
+│
+├── backend/                # Node.js + Neo4j backend
+│   ├── server.js
+│   ├── routes.js
+│   ├── neo4j.js
+│   ├── package.json
+│   └── .env                # (not committed)
+│
+├── src/                    # React frontend
+│   ├── components/
+│   ├── pages/
+│   ├── lib/
+│   ├── data/
+│   └── main.tsx
+│
+├── public/
+├── package.json
+├── vite.config.ts
+├── tailwind.config.ts
+└── README.md
+
+````
+
+---
+
+## ⚙️ Local Setup Instructions
+
+### 1️⃣ Prerequisites
+
+Make sure you have:
+- Node.js ≥ 18
+- npm
+- Git
+- Neo4j Desktop **or** Neo4j Aura
+
+Verify:
+```bash
+node -v
+npm -v
+git --version
+````
+
+---
+
+### 2️⃣ Clone the Repository
+
+```bash
+git clone https://github.com/ssrivarsha06/infrastructure-weaver.git
+cd infrastructure-weaver
+```
+
+---
+
+### 3️⃣ Backend Setup
+
+```bash
+cd backend
+npm install
+```
+
+Create a `.env` file inside `backend/`:
+
+```env
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_password_here
+```
+
+Start the backend:
+
+```bash
+node server.js
+```
+
+Backend runs at:
+
+```
+http://localhost:4000
+```
+
+---
+
+### 4️⃣ Neo4j Database
+
+* Start Neo4j using Neo4j Desktop or Aura
+* Ensure `InfrastructureUnit` nodes and `DEPENDS_ON` relationships exist
+
+Example relationship:
+
+```
+(A)-[:DEPENDS_ON]->(B)
+```
+
+---
+
+### 5️⃣ Frontend Setup
+
+```bash
+cd ..
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Frontend runs at:
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```
+http://localhost:5173
+```
 
-**Use GitHub Codespaces**
+---
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## 🧪 How to Use
 
-## What technologies are used for this project?
+1. Open the web app
+2. Navigate to **Infrastructure Network**
+3. Click on any node to view:
 
-This project is built with:
+   * Location
+   * Department
+   * Status
+   * Dependencies
+4. Use **Failure Analysis** to explore cascading impacts
+5. Use **Critical Infrastructure** to identify high-risk components
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+---
 
-## How can I deploy this project?
+## ❌ What This Project Is NOT
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+* ❌ No machine learning
+* ❌ No failure prediction
+* ❌ No real-time sensors
 
-## Can I connect a custom domain to my Lovable project?
+✅ Focuses on **logical dependency analysis** and **graph traversal**
 
-Yes, you can!
+---
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## 📌 Future Enhancements
+
+* Failure path highlighting
+* Time-based failure simulations
+* Geographic mapping
+* Automated dataset ingestion
+* Cloud deployment
+
+---
+
+## 📄 License
+
+This project is for academic and educational use.
+
