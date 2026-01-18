@@ -14,6 +14,14 @@ import {
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 
 import { getTypeLabel, getNodeColor, InfrastructureType } from "@/data/infrastructure";
 import { fetchInfrastructure } from "@/lib/api";
@@ -46,32 +54,24 @@ interface Region {
 
 const problemTypes = [
   { 
-    id: "power-outage",
+    id: "power",
     name: "Power Outage", 
     icon: Zap,
-    color: "#fbbf24",
-    description: "Electrical supply disruption"
   },
   { 
-    id: "water-shortage",
+    id: "water",
     name: "Water Shortage", 
     icon: Droplets,
-    color: "#3b82f6",
-    description: "Water supply interruption"
   },
   { 
-    id: "network-failure",
+    id: "telecom",
     name: "Network Failure", 
     icon: Radio,
-    color: "#8b5cf6",
-    description: "Communication breakdown"
   },
   { 
-    id: "transport-disruption",
+    id: "transport",
     name: "Transport Disruption", 
     icon: Car,
-    color: "#10b981",
-    description: "Transportation system failure"
   },
 ];
 
@@ -81,6 +81,7 @@ export default function Analysis() {
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<RootCauseAnalysis | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Auto-generate regions from infrastructure data
@@ -134,42 +135,33 @@ export default function Analysis() {
   const analyzeRootCause = async () => {
     if (!selectedProblem || !selectedRegion) return;
 
-    const problem = problemTypes.find(p => p.id === selectedProblem);
     const region = regions.find(r => r.id === selectedRegion);
-    
-    if (!problem || !region) return;
+    if (!region) return;
 
     setIsAnalyzing(true);
     setResult(null);
+    setError(null);
 
     try {
-      // Map problem type to infrastructure type
-      const typeMapping: { [key: string]: string } = {
-        'power-outage': 'power',
-        'water-shortage': 'water',
-        'network-failure': 'telecom',
-        'transport-disruption': 'transport'
-      };
-
-      const infrastructureType = typeMapping[selectedProblem];
       const locations = region.locations.join(',');
-
-      const url = `http://localhost:4000/api/root-cause?type=${encodeURIComponent(infrastructureType)}&locations=${encodeURIComponent(locations)}`;
+      const url = `http://localhost:4000/api/root-cause?type=${encodeURIComponent(selectedProblem)}&locations=${encodeURIComponent(locations)}`;
       
       console.log('Analyzing root cause:', url);
       
       const res = await fetch(url);
       
       if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`API returned ${res.status}: ${errorText}`);
+        const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.details || errorData.error || `API returned ${res.status}`);
       }
       
       const data = await res.json();
       console.log('Root cause analysis:', data);
       
+      const problem = problemTypes.find(p => p.id === selectedProblem);
+      
       setResult({
-        problem: problem.name,
+        problem: problem?.name || selectedProblem,
         region: region.name,
         rootCause: data.rootCause,
         impactChain: data.impactChain || [],
@@ -178,7 +170,7 @@ export default function Analysis() {
       });
     } catch (err) {
       console.error("Root cause analysis failed:", err);
-      alert(`Analysis failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setError(err instanceof Error ? err.message : 'Analysis failed. Please try again.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -186,6 +178,7 @@ export default function Analysis() {
 
   const clearAnalysis = () => {
     setResult(null);
+    setError(null);
     setSelectedProblem(null);
     setSelectedRegion(null);
   };
@@ -210,117 +203,121 @@ export default function Analysis() {
         ) : (
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Input Section */}
-            <div className="space-y-4">
-              {/* Problem Type Selection */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <AlertTriangle className="h-5 w-5" />
-                    Select Problem Type
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {problemTypes.map((problem) => {
-                    const Icon = problem.icon;
-                    return (
-                      <button
-                        key={problem.id}
-                        onClick={() => setSelectedProblem(problem.id)}
-                        className={`w-full rounded-lg border-2 p-4 text-left transition-all hover:shadow-md ${
-                          selectedProblem === problem.id
-                            ? 'border-primary bg-primary/5'
-                            : 'border-border hover:border-primary/50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div 
-                            className="flex h-10 w-10 items-center justify-center rounded-lg"
-                            style={{ backgroundColor: `${problem.color}20` }}
-                          >
-                            <Icon className="h-5 w-5" style={{ color: problem.color }} />
-                          </div>
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-foreground">{problem.name}</h3>
-                            <p className="text-sm text-muted-foreground">{problem.description}</p>
-                          </div>
-                          {selectedProblem === problem.id && (
-                            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary">
-                              <svg className="h-4 w-4 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Search className="h-5 w-5" />
+                  Analysis Parameters
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Problem Type */}
+                <div className="space-y-2">
+                  <Label>Failure Type</Label>
+                  <Select value={selectedProblem || ""} onValueChange={setSelectedProblem}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select failure type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {problemTypes.map((problem) => {
+                        const Icon = problem.icon;
+                        return (
+                          <SelectItem key={problem.id} value={problem.id}>
+                            <div className="flex items-center gap-2">
+                              <Icon className="h-4 w-4" />
+                              {problem.name}
                             </div>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </CardContent>
-              </Card>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              {/* Region Selection */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MapPin className="h-5 w-5" />
-                    Select Region
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {regions.map((region) => (
-                    <button
-                      key={region.id}
-                      onClick={() => setSelectedRegion(region.id)}
-                      className={`w-full rounded-lg border-2 p-4 text-left transition-all hover:shadow-md ${
-                        selectedRegion === region.id
-                          ? 'border-primary bg-primary/5'
-                          : 'border-border hover:border-primary/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{region.icon}</span>
-                        <div className="flex-1">
-                          <h3 className="font-semibold text-foreground">{region.name}</h3>
-                          <p className="text-xs text-muted-foreground">
-                            {region.locations.length} location{region.locations.length !== 1 ? 's' : ''}
-                          </p>
-                        </div>
-                        {selectedRegion === region.id && (
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary">
-                            <svg className="h-4 w-4 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
+                {/* Region */}
+                <div className="space-y-2">
+                  <Label>Region</Label>
+                  <Select value={selectedRegion || ""} onValueChange={setSelectedRegion}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select region" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {regions.map((region) => (
+                        <SelectItem key={region.id} value={region.id}>
+                          <div className="flex items-center gap-2">
+                            <span>{region.icon}</span>
+                            {region.name}
                           </div>
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </CardContent>
-              </Card>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              {/* Analyze Button */}
-              <Button
-                onClick={analyzeRootCause}
-                disabled={!canAnalyze}
-                className="w-full"
-                size="lg"
-              >
-                {isAnalyzing ? (
-                  <>
-                    <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                    Analyzing Root Cause...
-                  </>
-                ) : (
-                  <>
-                    Find Root Cause
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </>
+                {/* Analyze Button */}
+                <Button
+                  onClick={analyzeRootCause}
+                  disabled={!canAnalyze}
+                  className="w-full"
+                  size="lg"
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      Find Root Cause
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+
+                {result && (
+                  <Button variant="outline" onClick={clearAnalysis} className="w-full">
+                    Clear Analysis
+                  </Button>
                 )}
-              </Button>
-            </div>
+              </CardContent>
+            </Card>
 
             {/* Results Section */}
             <AnimatePresence mode="wait">
-              {result ? (
+              {error ? (
+                <motion.div
+                  key="error"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <Card className="h-full">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-critical">
+                        <AlertTriangle className="h-5 w-5" />
+                        No Infrastructure Found
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="rounded-lg border-2 border-critical/20 bg-critical/5 p-4">
+                        <p className="text-sm text-foreground">{error}</p>
+                      </div>
+                      <div className="rounded-lg bg-secondary p-4">
+                        <p className="mb-2 text-sm font-medium">Suggestions:</p>
+                        <ul className="space-y-1 text-sm text-muted-foreground">
+                          <li>• Try a different region</li>
+                          <li>• Select another failure type</li>
+                          <li>• Check if infrastructure data is loaded</li>
+                        </ul>
+                      </div>
+                      <Button variant="outline" onClick={clearAnalysis} className="w-full">
+                        Try Again
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ) : result ? (
                 <motion.div
                   key="result"
                   initial={{ opacity: 0, x: 20 }}
