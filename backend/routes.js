@@ -11,7 +11,7 @@ router.get("/infrastructure", async (req, res) => {
 
   try {
     const result = await session.run(`
-      MATCH (n)-[r:DEPENDS_ON]->(m)
+      MATCH (n:InfrastructureUnit)-[r:DEPENDS_ON]->(m:InfrastructureUnit)
       RETURN n, r, m
     `);
 
@@ -22,73 +22,35 @@ router.get("/infrastructure", async (req, res) => {
     }));
 
     res.json(data);
+  } catch (error) {
+    console.error("Infrastructure fetch error:", error);
+    res.status(500).json({ error: "Failed to fetch infrastructure" });
   } finally {
     await session.close();
   }
 });
 
 /**
- * 2️⃣ Region Analysis
+ * 2️⃣ Fetch Regions (Dynamic - No Hardcoding)
  */
-router.get("/analyze-region", async (req, res) => {
-  const { region, locations } = req.query;
+router.get("/regions", async (req, res) => {
   const session = driver.session({ database: "cityinfrastructure" });
 
   try {
-    const locationArray = locations.split(',');
+    const result = await session.run(`
+      MATCH (r:Region)-[:PART_OF]->(:City {name:"Chennai"})
+      RETURN r.name AS region
+      ORDER BY r.name
+    `);
 
-    // Find all critical units in this region (high dependency count)
-    const criticalResult = await session.run(
-      `
-      MATCH (n:InfrastructureUnit)
-      WHERE n.location IN $locations
-      OPTIONAL MATCH (dependent)-[:DEPENDS_ON*]->(n)
-      WITH n, COUNT(DISTINCT dependent) as dependentCount
-      WHERE dependentCount > 0
-      RETURN n, dependentCount
-      ORDER BY dependentCount DESC
-      LIMIT 5
-      `,
-      { locations: locationArray }
-    );
-
-    const criticalUnits = criticalResult.records.map(r => ({
-      ...r.get('n').properties,
-      dependentCount: r.get('dependentCount').toNumber()
-    }));
-
-    // Count total units
-    const totalResult = await session.run(
-      `
-      MATCH (n:InfrastructureUnit)
-      WHERE n.location IN $locations
-      RETURN COUNT(n) as total
-      `,
-      { locations: locationArray }
-    );
-
-    const totalUnits = totalResult.records[0].get('total').toNumber();
-
-    // Generate vulnerabilities
-    const vulnerabilities = [];
-    if (criticalUnits.length > 0) {
-      vulnerabilities.push(`${criticalUnits.length} critical infrastructure units identified`);
-      vulnerabilities.push(`Single point of failure risk in ${criticalUnits[0].name}`);
-    }
-
-    await session.close();
-
-    res.json({
-      region,
-      criticalUnits,
-      vulnerabilities,
-      totalUnits
-    });
+    const regions = result.records.map(r => r.get("region"));
+    res.json(regions);
 
   } catch (error) {
+    console.error("Regions fetch error:", error);
+    res.status(500).json({ error: "Failed to fetch regions" });
+  } finally {
     await session.close();
-    console.error('Region analysis error:', error);
-    res.status(500).json({ error: 'Analysis failed', details: error.message });
   }
 });
 
@@ -111,74 +73,71 @@ router.get("/critical", async (req, res) => {
     }));
 
     res.json(data);
+  } catch (error) {
+    console.error("Critical fetch error:", error);
+    res.status(500).json({ error: "Failed to fetch critical infrastructure" });
   } finally {
     await session.close();
   }
 });
 
 /**
- * 4️⃣ Root Cause Analysis
+ * 4️⃣ Root Cause Analysis (UPDATED - Uses Region Node)
  */
 router.get("/root-cause", async (req, res) => {
-  const { type, locations } = req.query;
+  const { type, region } = req.query;
   const session = driver.session({ database: "cityinfrastructure" });
 
   try {
-    if (!type || !locations) {
-      return res.status(400).json({ error: 'Missing type or locations parameter' });
+    if (!type || !region) {
+      return res.status(400).json({ error: "Missing type or region parameter" });
     }
 
-    const locationArray = locations.split(',');
-    console.log('Analyzing root cause for:', { type, locationArray });
-
-    // Find the root cause - infrastructure unit of this type in these locations
-    // that has the MOST dependencies (most critical)
+    // Step 1: Find most critical root node in selected region
     const rootResult = await session.run(
       `
-      MATCH (root:InfrastructureUnit)
-      WHERE root.type = $type AND root.location IN $locations
+      MATCH (root:InfrastructureUnit)-[:LOCATED_IN]->(:Region {name:$region})
+      WHERE root.type = $type
+
       OPTIONAL MATCH (dependent)-[:DEPENDS_ON*]->(root)
+
       WITH root, COUNT(DISTINCT dependent) as dependentCount
       RETURN root, dependentCount
       ORDER BY dependentCount DESC
       LIMIT 1
       `,
-      { type, locations: locationArray }
+      { type, region }
     );
 
-    console.log('Root result records:', rootResult.records.length);
-
     if (rootResult.records.length === 0) {
-      await session.close();
-      return res.status(404).json({ 
-        error: 'No infrastructure found',
-        details: `No ${type} infrastructure found in the selected region. Available locations: ${locationArray.join(', ')}`
+      return res.status(404).json({
+        error: "No infrastructure found",
+        details: `No ${type} infrastructure found in ${region}`
       });
     }
 
-    const rootNode = rootResult.records[0].get('root').properties;
-    const affectedCount = rootResult.records[0].get('dependentCount').toNumber();
+    const rootNode = rootResult.records[0].get("root").properties;
+    const affectedCount = rootResult.records[0]
+      .get("dependentCount")
+      .toNumber();
 
-    console.log('Root node found:', rootNode);
-    console.log('Affected count:', affectedCount);
-
-    // Find the cascading impact chain
+    // Step 2: Find cascading impact chain
     const impactResult = await session.run(
       `
-      MATCH (root:InfrastructureUnit {id: $rootId})
+      MATCH (root:InfrastructureUnit {id:$rootId})
       MATCH path = (dependent)-[:DEPENDS_ON*]->(root)
+
       WITH dependent, LENGTH(path) as depth
       ORDER BY depth ASC
       RETURN DISTINCT dependent
-      LIMIT 10
+      LIMIT 15
       `,
       { rootId: rootNode.id }
     );
 
-    const impactChain = impactResult.records.map(r => r.get('dependent').properties);
-    console.log('Impact chain length:', impactChain.length);
-
-    await session.close();
+    const impactChain = impactResult.records.map(r =>
+      r.get("dependent").properties
+    );
 
     res.json({
       rootCause: rootNode,
@@ -188,9 +147,13 @@ router.get("/root-cause", async (req, res) => {
     });
 
   } catch (error) {
+    console.error("Root cause analysis error:", error);
+    res.status(500).json({
+      error: "Analysis failed",
+      details: error.message
+    });
+  } finally {
     await session.close();
-    console.error('Root cause analysis error:', error);
-    res.status(500).json({ error: 'Analysis failed', details: error.message });
   }
 });
 
