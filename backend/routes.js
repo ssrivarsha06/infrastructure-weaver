@@ -7,21 +7,35 @@ const router = express.Router();
  * 1️⃣ Infrastructure Network
  */
 router.get("/infrastructure", async (req, res) => {
+  const { city } = req.query;
   const session = driver.session({ database: "cityinfrastructure" });
 
   try {
-    const result = await session.run(`
-      MATCH (n:InfrastructureUnit)-[r:DEPENDS_ON]->(m:InfrastructureUnit)
-      RETURN n, r, m
-    `);
+    if (!city) {
+      return res.status(400).json({ error: "City parameter required" });
+    }
+
+    const result = await session.run(
+      `
+      MATCH (c:City {name:$city})
+      MATCH (i:InfrastructureUnit)-[:LOCATED_IN]->(:Region)-[:PART_OF]->(c)
+
+      OPTIONAL MATCH (i)-[r:DEPENDS_ON]->(m:InfrastructureUnit)
+      WHERE (m)-[:LOCATED_IN]->(:Region)-[:PART_OF]->(c)
+
+      RETURN i, r, m
+      `,
+      { city }
+    );
 
     const data = result.records.map(record => ({
-      from: record.get("n").properties,
-      to: record.get("m").properties,
-      relationship: record.get("r").type
+      from: record.get("i")?.properties,
+      to: record.get("m")?.properties || null,
+      relationship: record.get("r")?.type || null
     }));
 
     res.json(data);
+
   } catch (error) {
     console.error("Infrastructure fetch error:", error);
     res.status(500).json({ error: "Failed to fetch infrastructure" });
@@ -29,19 +43,47 @@ router.get("/infrastructure", async (req, res) => {
     await session.close();
   }
 });
-
 /**
- * 2️⃣ Fetch Regions (Dynamic - No Hardcoding)
+ * 2️⃣ Fetch Cities
  */
-router.get("/regions", async (req, res) => {
+router.get("/cities", async (req, res) => {
   const session = driver.session({ database: "cityinfrastructure" });
 
   try {
     const result = await session.run(`
-      MATCH (r:Region)-[:PART_OF]->(:City {name:"Chennai"})
-      RETURN r.name AS region
-      ORDER BY r.name
+      MATCH (c:City)
+      RETURN c.name AS city
+      ORDER BY city
     `);
+
+    const cities = result.records.map(r => r.get("city"));
+    res.json(cities);
+
+  } catch (error) {
+    console.error("Cities fetch error:", error);
+    res.status(500).json({ error: "Failed to fetch cities" });
+  } finally {
+    await session.close();
+  }
+});
+
+/**
+ * 3️⃣ Fetch Regions by City
+ */
+router.get("/regions", async (req, res) => {
+  const { city } = req.query;
+  const session = driver.session({ database: "cityinfrastructure" });
+
+  try {
+    if (!city) {
+      return res.status(400).json({ error: "City parameter required" });
+    }
+
+    const result = await session.run(`
+      MATCH (r:Region)-[:PART_OF]->(c:City {name:$city})
+      RETURN r.name AS region
+      ORDER BY region
+    `, { city });
 
     const regions = result.records.map(r => r.get("region"));
     res.json(regions);
@@ -55,7 +97,7 @@ router.get("/regions", async (req, res) => {
 });
 
 /**
- * 3️⃣ Critical Infrastructure
+ * 4️⃣ Critical Infrastructure (Global)
  */
 router.get("/critical", async (req, res) => {
   const session = driver.session({ database: "cityinfrastructure" });
@@ -73,6 +115,7 @@ router.get("/critical", async (req, res) => {
     }));
 
     res.json(data);
+
   } catch (error) {
     console.error("Critical fetch error:", error);
     res.status(500).json({ error: "Failed to fetch critical infrastructure" });
@@ -82,37 +125,43 @@ router.get("/critical", async (req, res) => {
 });
 
 /**
- * 4️⃣ Root Cause Analysis (UPDATED - Uses Region Node)
+ * 5️⃣ Root Cause Analysis (City + Region Scoped)
  */
 router.get("/root-cause", async (req, res) => {
-  const { type, region } = req.query;
+  const { type, city, region } = req.query;
   const session = driver.session({ database: "cityinfrastructure" });
 
   try {
-    if (!type || !region) {
-      return res.status(400).json({ error: "Missing type or region parameter" });
+    if (!type || !city || !region) {
+      return res.status(400).json({
+        error: "Missing parameters",
+        details: "type, city and region are required"
+      });
     }
 
-    // Step 1: Find most critical root node in selected region
+    // Step 1 — Find most critical infra in selected city + region
     const rootResult = await session.run(
       `
-      MATCH (root:InfrastructureUnit)-[:LOCATED_IN]->(:Region {name:$region})
+      MATCH (root:InfrastructureUnit)
+            -[:LOCATED_IN]->(r:Region {name:$region})
+            -[:PART_OF]->(c:City {name:$city})
+
       WHERE root.type = $type
 
       OPTIONAL MATCH (dependent)-[:DEPENDS_ON*]->(root)
 
-      WITH root, COUNT(DISTINCT dependent) as dependentCount
+      WITH root, COUNT(DISTINCT dependent) AS dependentCount
       RETURN root, dependentCount
       ORDER BY dependentCount DESC
       LIMIT 1
       `,
-      { type, region }
+      { type, city, region }
     );
 
     if (rootResult.records.length === 0) {
       return res.status(404).json({
         error: "No infrastructure found",
-        details: `No ${type} infrastructure found in ${region}`
+        details: `No ${type} infrastructure found in ${region}, ${city}`
       });
     }
 
@@ -121,13 +170,13 @@ router.get("/root-cause", async (req, res) => {
       .get("dependentCount")
       .toNumber();
 
-    // Step 2: Find cascading impact chain
+    // Step 2 — Cascading Impact
     const impactResult = await session.run(
       `
       MATCH (root:InfrastructureUnit {id:$rootId})
       MATCH path = (dependent)-[:DEPENDS_ON*]->(root)
 
-      WITH dependent, LENGTH(path) as depth
+      WITH dependent, LENGTH(path) AS depth
       ORDER BY depth ASC
       RETURN DISTINCT dependent
       LIMIT 15
@@ -140,6 +189,8 @@ router.get("/root-cause", async (req, res) => {
     );
 
     res.json({
+      city,
+      region,
       rootCause: rootNode,
       impactChain,
       affectedServices: affectedCount,

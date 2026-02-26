@@ -1,5 +1,8 @@
-export async function fetchInfrastructure() {
-  const res = await fetch("http://localhost:4000/api/infrastructure");
-  if (!res.ok) throw new Error("Failed to fetch infrastructure");
+export async function fetchInfrastructure(city?: string) {
+  const url = city
+    ? `http://localhost:4000/api/infrastructure?city=${encodeURIComponent(city)}`
+    : `http://localhost:4000/api/infrastructure`;
+
+  const res = await fetch(url);
   return res.json();
 }

@@ -7,7 +7,6 @@ import {
   Droplets,
   Radio,
   Car,
-  MapPin,
   ArrowRight,
 } from "lucide-react";
 
@@ -23,10 +22,9 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 
-import { getTypeLabel, getNodeColor, InfrastructureType } from "@/data/infrastructure";
-
 interface RootCauseAnalysis {
   problem: string;
+  city: string;
   region: string;
   rootCause: {
     name: string;
@@ -34,11 +32,7 @@ interface RootCauseAnalysis {
     location: string;
     department: string;
   };
-  impactChain: Array<{
-    name: string;
-    type: string;
-    location: string;
-  }>;
+  impactChain: any[];
   affectedServices: number;
   criticalPath: string[];
 }
@@ -57,19 +51,50 @@ const problemTypes = [
 ];
 
 export default function Analysis() {
+  const [cities, setCities] = useState<string[]>([]);
   const [regions, setRegions] = useState<Region[]>([]);
-  const [selectedProblem, setSelectedProblem] = useState<string | null>(null);
+
+  const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
+  const [selectedProblem, setSelectedProblem] = useState<string | null>(null);
+
+  const [loading, setLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
   const [result, setResult] = useState<RootCauseAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
 
   /**
-   * Load regions from backend
+   * 1️⃣ Load Cities on Page Load
    */
   useEffect(() => {
-    fetch("http://localhost:4000/api/regions")
+    fetch("http://localhost:4000/api/cities")
+      .then((res) => res.json())
+      .then((data) => {
+        setCities(data);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError("Failed to load cities");
+        setLoading(false);
+      });
+  }, []);
+
+  /**
+   * 2️⃣ Load Regions When City Changes
+   */
+  useEffect(() => {
+    if (!selectedCity) {
+      setRegions([]);
+      setSelectedRegion(null);
+      return;
+    }
+
+    fetch(
+      `http://localhost:4000/api/regions?city=${encodeURIComponent(
+        selectedCity
+      )}`
+    )
       .then((res) => res.json())
       .then((data) => {
         const formatted = data.map((r: string) => ({
@@ -78,22 +103,15 @@ export default function Analysis() {
           icon: "📍",
         }));
         setRegions(formatted);
-        setLoading(false);
       })
-      .catch(() => {
-        setError("Failed to load regions");
-        setLoading(false);
-      });
-  }, []);
+      .catch(() => setError("Failed to load regions"));
+  }, [selectedCity]);
 
   /**
-   * Root Cause Analysis
+   * 3️⃣ Root Cause Analysis
    */
   const analyzeRootCause = async () => {
-    if (!selectedProblem || !selectedRegion) return;
-
-    const region = regions.find((r) => r.id === selectedRegion);
-    if (!region) return;
+    if (!selectedCity || !selectedRegion || !selectedProblem) return;
 
     setIsAnalyzing(true);
     setResult(null);
@@ -102,23 +120,29 @@ export default function Analysis() {
     try {
       const url = `http://localhost:4000/api/root-cause?type=${encodeURIComponent(
         selectedProblem
+      )}&city=${encodeURIComponent(
+        selectedCity
       )}&region=${encodeURIComponent(selectedRegion)}`;
 
       const res = await fetch(url);
 
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({ error: "Unknown error" }));
+        const errorData = await res.json().catch(() => ({
+          error: "Unknown error",
+        }));
         throw new Error(
           errorData.details || errorData.error || `API returned ${res.status}`
         );
       }
 
       const data = await res.json();
+
       const problem = problemTypes.find((p) => p.id === selectedProblem);
 
       setResult({
         problem: problem?.name || selectedProblem,
-        region: region.name,
+        city: selectedCity,
+        region: selectedRegion,
         rootCause: data.rootCause,
         impactChain: data.impactChain || [],
         affectedServices: data.affectedServices || 0,
@@ -138,26 +162,26 @@ export default function Analysis() {
     setSelectedRegion(null);
   };
 
-  const canAnalyze = selectedProblem && selectedRegion && !isAnalyzing;
+  const canAnalyze =
+    selectedCity && selectedRegion && selectedProblem && !isAnalyzing;
 
   return (
     <Layout>
       <div className="space-y-6">
-        {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Root Cause Analysis</h1>
+          <h1 className="text-2xl font-bold">Root Cause Analysis</h1>
           <p className="text-muted-foreground">
-            Identify infrastructure root causes using dependency graph analysis
+            Identify infrastructure failures by city and region
           </p>
         </div>
 
         {loading ? (
-          <div className="flex h-[500px] items-center justify-center">
+          <div className="flex h-[400px] items-center justify-center">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
           </div>
         ) : (
           <div className="grid gap-6 lg:grid-cols-2">
-            {/* Input Section */}
+            {/* Input Panel */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -167,10 +191,54 @@ export default function Analysis() {
               </CardHeader>
 
               <CardContent className="space-y-6">
+                {/* City */}
+                <div className="space-y-2">
+                  <Label>City</Label>
+                  <Select
+                    value={selectedCity || ""}
+                    onValueChange={setSelectedCity}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select city" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {cities.map((city) => (
+                        <SelectItem key={city} value={city}>
+                          {city}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Region */}
+                <div className="space-y-2">
+                  <Label>Region</Label>
+                  <Select
+                    value={selectedRegion || ""}
+                    onValueChange={setSelectedRegion}
+                    disabled={!selectedCity}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select region" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {regions.map((region) => (
+                        <SelectItem key={region.id} value={region.id}>
+                          {region.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Problem Type */}
                 <div className="space-y-2">
                   <Label>Failure Type</Label>
-                  <Select value={selectedProblem || ""} onValueChange={setSelectedProblem}>
+                  <Select
+                    value={selectedProblem || ""}
+                    onValueChange={setSelectedProblem}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select failure type" />
                     </SelectTrigger>
@@ -190,98 +258,87 @@ export default function Analysis() {
                   </Select>
                 </div>
 
-                {/* Region */}
-                <div className="space-y-2">
-                  <Label>Region</Label>
-                  <Select value={selectedRegion || ""} onValueChange={setSelectedRegion}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select region" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {regions.map((region) => (
-                        <SelectItem key={region.id} value={region.id}>
-                          <div className="flex items-center gap-2">
-                            <span>{region.icon}</span>
-                            {region.name}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Analyze Button */}
                 <Button
                   onClick={analyzeRootCause}
                   disabled={!canAnalyze}
                   className="w-full"
-                  size="lg"
                 >
-                  {isAnalyzing ? (
-                    <>
-                      <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                      Analyzing...
-                    </>
-                  ) : (
-                    <>
-                      Find Root Cause
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </>
-                  )}
+                  {isAnalyzing ? "Analyzing..." : "Find Root Cause"}
+                  {!isAnalyzing && <ArrowRight className="ml-2 h-4 w-4" />}
                 </Button>
               </CardContent>
             </Card>
 
-            {/* Results Section */}
+            {/* Results */}
             <AnimatePresence mode="wait">
               {error ? (
-                <motion.div
-                  key="error"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-critical flex items-center gap-2">
+                      <CardTitle className="text-red-500 flex gap-2">
                         <AlertTriangle className="h-5 w-5" />
                         Analysis Failed
                       </CardTitle>
                     </CardHeader>
-                    <CardContent>
-                      <p>{error}</p>
-                      <Button variant="outline" onClick={clearAnalysis} className="mt-4">
-                        Try Again
-                      </Button>
-                    </CardContent>
+                    <CardContent>{error}</CardContent>
                   </Card>
                 </motion.div>
               ) : result ? (
-                <motion.div
-                  key="result"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                   <Card>
                     <CardHeader>
                       <CardTitle>
-                        Root Cause: {result.problem} in {result.region}
+                        {result.problem} in {result.city} – {result.region}
                       </CardTitle>
                     </CardHeader>
+                    <CardContent>
+                      <p className="font-bold">
+                        Root Cause: {result.rootCause.name}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {result.rootCause.location} •{" "}
+                        {result.rootCause.department}
+                      </p>
+                      <CardContent className="space-y-4">
+  <div>
+    <p className="font-bold text-lg">
+      Root Cause: {result.rootCause.name}
+    </p>
+    <p className="text-sm text-muted-foreground">
+      {result.rootCause.location} • {result.rootCause.department}
+    </p>
+  </div>
 
-                    <CardContent className="space-y-4">
-                      <div>
-                        <h3 className="font-bold">{result.rootCause.name}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {result.rootCause.location} • {result.rootCause.department}
-                        </p>
-                      </div>
+  <div>
+    <p className="text-sm font-medium">Affected Services</p>
+    <p className="text-xl font-bold">{result.affectedServices}</p>
+  </div>
 
-                      <div>
-                        <p className="text-sm font-medium">Affected Services</p>
-                        <p className="text-xl font-bold">{result.affectedServices}</p>
-                      </div>
+  {/* 🔥 Affected Services List */}
+  {result.impactChain.length > 0 && (
+    <div className="mt-4">
+      <p className="text-sm font-medium mb-2">Cascading Impact</p>
+      <div className="space-y-2 max-h-64 overflow-y-auto border rounded-lg p-3 bg-muted/20">
+        {result.impactChain.map((service: any, index: number) => (
+          <div
+            key={index}
+            className="flex justify-between items-center border-b pb-2 last:border-none"
+          >
+            <div>
+              <p className="font-medium text-sm">{service.name}</p>
+              <p className="text-xs text-muted-foreground">
+                {service.location}
+              </p>
+            </div>
+            <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded">
+              {service.type}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )}
+</CardContent>
                     </CardContent>
                   </Card>
                 </motion.div>

@@ -35,15 +35,26 @@ export default function Infrastructure() {
   const [selectedNode, setSelectedNode] = useState<any | null>(null);
 
   // 🔗 Load data from backend (Neo4j)
-  useEffect(() => {
-  fetchInfrastructure().then((data) => {
-    console.log("Raw API data:", data); // Add this line
+const [cities, setCities] = useState<string[]>([]);
+const [selectedCity, setSelectedCity] = useState<string | null>(null);
+
+useEffect(() => {
+  // Load cities
+  fetch("http://localhost:4000/api/cities")
+    .then(res => res.json())
+    .then(setCities);
+}, []);
+
+useEffect(() => {
+  if (!selectedCity) return;
+
+  fetchInfrastructure(selectedCity).then((data) => {
     const graph = buildGraph(data);
-    console.log("Built graph:", graph); // Add this line
     setNodes(graph.nodes);
     setEdges(graph.edges);
+    setSelectedNode(null);
   });
-}, []);
+}, [selectedCity]);
 
   // 🔍 Compute connections dynamically from edges
   const getConnections = (nodeId: string) => {
@@ -79,7 +90,21 @@ export default function Infrastructure() {
             Click on any node to view its details and dependencies
           </p>
         </div>
-
+<div className="max-w-xs">
+  <label className="text-sm font-medium">City</label>
+  <select
+    value={selectedCity || ""}
+    onChange={(e) => setSelectedCity(e.target.value)}
+    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+  >
+    <option value="">Select city</option>
+    {cities.map((city) => (
+      <option key={city} value={city}>
+        {city}
+      </option>
+    ))}
+  </select>
+</div>
         {/* Legend */}
         <div className="flex flex-wrap gap-4">
           {(["power", "water", "telecom", "transport"] as const).map((type) => (
